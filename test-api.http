@@ -1,0 +1,75 @@
+### 변수 설정
+@baseUrl = http://localhost:3001/api
+@teamId = 1
+@stockId = 1
+@questionId = 1
+
+### 1. 로그인 (팀 코드로 로그인)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "teamCode": "TEAM-001"
+}
+
+### 2. 모든 주식 조회
+GET {{baseUrl}}/stocks
+
+### 3. 특정 주식의 거래 히스토리 조회
+GET {{baseUrl}}/stocks/{{stockId}}/history
+
+### 4. 주식 매수
+POST {{baseUrl}}/trade
+Content-Type: application/json
+
+{
+  "teamId": {{teamId}},
+  "stockId": {{stockId}},
+  "quantity": 10,
+  "action": "buy"
+}
+
+### 5. 주식 매도
+POST {{baseUrl}}/trade
+Content-Type: application/json
+
+{
+  "teamId": {{teamId}},
+  "stockId": {{stockId}},
+  "quantity": 5,
+  "action": "sell"
+}
+
+### 6. 팀 포트폴리오 조회
+GET {{baseUrl}}/portfolio/{{teamId}}
+
+### 7. 랭킹 조회
+GET {{baseUrl}}/ranking
+
+### 8. 퀴즈 문제 조회 (라운드 1)
+GET {{baseUrl}}/quiz/1
+
+### 9. 퀴즈 답안 제출
+POST {{baseUrl}}/quiz/submit
+Content-Type: application/json
+
+{
+  "teamId": {{teamId}},
+  "questionId": {{questionId}},
+  "selectedAnswer": 0
+}
+
+### 10. 이벤트 조회 (전체)
+GET {{baseUrl}}/events
+
+### 11. 이벤트 조회 (특정 라운드)
+GET {{baseUrl}}/events?round=1
+
+### 12. 이벤트 트리거 (관리자용)
+POST {{baseUrl}}/events/trigger
+Content-Type: application/json
+
+{
+  "eventId": 1,
+  "action": "trigger"
+}

@@ -1,12 +1,93 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// schema.prisma
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model Team {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String?
+  balance     Decimal  @default(100000)
+  esgScore    Int      @default(0) @map("esg_score")
+  quizScore   Int      @default(0) @map("quiz_score")
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  holdings     Holding[]
+  transactions Transaction[]
+  
+  @@map("teams")
+}
+
+model Stock {
+  id           Int      @id @default(autoincrement())
+  symbol       String   @unique
+  companyName  String   @map("company_name")
+  currentPrice Decimal  @map("current_price")
+  esgCategory  String   @map("esg_category")
+  description  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  
+  holdings     Holding[]
+  transactions Transaction[]
+  
+  @@map("stocks")
+}
+
+model Holding {
+  id          Int     @id @default(autoincrement())
+  teamId      Int     @map("team_id")
+  stockId     Int     @map("stock_id")
+  quantity    Int
+  avgBuyPrice Decimal @map("avg_buy_price")
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  team  Team  @relation(fields: [teamId], references: [id])
+  stock Stock @relation(fields: [stockId], references: [id])
+  
+  @@map("holdings")
+}
+
+model Transaction {
+  id        Int      @id @default(autoincrement())
+  teamId    Int      @map("team_id")
+  stockId   Int      @map("stock_id")
+  type      String   // 'BUY' or 'SELL'
+  quantity  Int
+  price     Decimal
+  fee       Decimal  @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  team  Team  @relation(fields: [teamId], references: [id])
+  stock Stock @relation(fields: [stockId], references: [id])
+  
+  @@map("transactions")
+}
+
+model QuizQuestion {
+  id            Int      @id @default(autoincrement())
+  question      String
+  options       Json
+  correctAnswer Int      @map("correct_answer")
+  roundNumber   Int      @map("round_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+  
+  @@map("quiz_questions")
+}
+
+model NewsEvent {
+  id             Int      @id @default(autoincrement())
+  title          String
+  content        String?
+  affectedStocks Json     @map("affected_stocks")
+  roundNumber    Int      @map("round_number")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  
+  @@map("news_events")
 }
