@@ -1,3 +1,4 @@
+// app.ts (업데이트됨)
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -10,6 +11,7 @@ import quizRoutes from './routes/quiz';
 import rankingRoutes from './routes/ranking';
 import eventRoutes from './routes/events';
 import portfolioRoutes from './routes/portfolio';
+import gameRoutes from './routes/game'; // 새로 추가
 
 dotenv.config();
 
@@ -37,6 +39,7 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/ranking', rankingRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/portfolio', portfolioRoutes);
+app.use('/api/game', gameRoutes); // 새로 추가
 
 // 헬스 체크
 app.get('/health', (req, res) => {
@@ -44,6 +47,26 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// 게임 관리 페이지 (관리자용)
+app.get('/admin', (req, res) => {
+  res.json({
+    message: 'ESG 투자 게임 관리자 페이지',
+    endpoints: {
+      gameState: 'GET /api/game/state',
+      startGame: 'POST /api/game/start',
+      resetGame: 'POST /api/game/reset',
+      forceNextPhase: 'POST /api/game/next-phase',
+      tradeStatus: 'GET /api/game/trade/status'
+    },
+    usage: {
+      startGame: '게임을 시작합니다 (라운드 1 뉴스 단계부터)',
+      resetGame: '게임을 초기화합니다 (모든 팀 데이터 리셋)',
+      forceNextPhase: '현재 단계를 건너뛰고 다음 단계로 이동',
+      gameState: '현재 게임 상태를 확인합니다'
+    }
   });
 });
 
@@ -67,7 +90,12 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 app.listen(PORT, () => {
   console.log(`🚀 서버가 포트 ${PORT}에서 실행 중입니다.`);
   console.log(`📋 헬스 체크: http://localhost:${PORT}/health`);
+  console.log(`🎮 관리자 페이지: http://localhost:${PORT}/admin`);
   console.log(`🌍 환경: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`\n🎯 게임 관리 명령어:`);
+  console.log(`   게임 시작: POST http://localhost:${PORT}/api/game/start`);
+  console.log(`   게임 리셋: POST http://localhost:${PORT}/api/game/reset`);
+  console.log(`   게임 상태: GET http://localhost:${PORT}/api/game/state`);
 });
 
 export default app;
