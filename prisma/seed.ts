@@ -153,6 +153,12 @@ async function main() {
   const newsEvents = await prisma.newsEvent.createMany({
     data: [
       {
+        title: '라운드 1 - 전기차 붐',
+        content: '글로벌 전기차 시장이 빠르게 성장하며, 배터리 및 리튬 수요 증가',
+        affectedStocks: { Tesla: 10, BYD: 7, LG: 5 },
+        roundNumber: 1,
+      },
+      {
         title: '테슬라, 혁신적인 배터리 기술 발표',
         content: '새로운 4680 배터리 셀 기술로 주행거리 2배 향상, 충전 시간 50% 단축',
         affectedStocks: { TESLA: 8 },
