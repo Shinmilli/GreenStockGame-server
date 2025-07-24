@@ -1,4 +1,4 @@
-// controllers/gameStateController.ts
+// controllers/gameStateController.ts - 완전한 구현
 import { Request, Response } from 'express';
 import { prisma } from '../models';
 import { handleControllerError } from '../utils/errorHandler';
@@ -10,26 +10,29 @@ interface GameState {
   isActive: boolean;
   startTime?: Date;
   endTime?: Date;
+  requiresManualAdvance: boolean;
 }
 
-// 메모리에 게임 상태 저장 (실제로는 Redis나 DB 사용 권장)
+// 메모리에 게임 상태 저장
 let gameState: GameState = {
   currentRound: 1,
   phase: 'news',
   timeRemaining: 0,
-  isActive: false
+  isActive: false,
+  requiresManualAdvance: false
 };
 
 const PHASE_DURATIONS = {
-  news: 30000,     // 30초 - 뉴스 발표
-  quiz: 120000,    // 2분 - 퀴즈
-  trading: 300000, // 5분 - 거래
-  results: 30000   // 30초 - 결과 발표
+  news: 90000,     // 1.5분 - 뉴스 발표
+  quiz: 60000,    // 1분 - 퀴즈
+  trading: 300000, // 5분 - 거래  
+  results: 60000   // 1분 - 결과 발표
 };
 
 let gameTimer: NodeJS.Timeout | null = null;
+let timeUpdateInterval: NodeJS.Timeout | null = null;
 
-export const getGameState = async (req: Request, res: Response): Promise<void> => {
+const getGameState = async (req: Request, res: Response): Promise<void> => {
   try {
     res.json({
       ...gameState,
@@ -41,12 +44,52 @@ export const getGameState = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-export const startGame = async (req: Request, res: Response): Promise<void> => {
+const startGame = async (req: Request, res: Response): Promise<void> => {
   try {
     if (gameState.isActive) {
       res.status(400).json({ message: '게임이 이미 진행 중입니다.' });
       return;
     }
+
+    // 🔥 모든 게임 데이터 완전 초기화
+    await prisma.$transaction(async (tx) => {
+      // 퀴즈 제출 기록 삭제
+      await tx.quizSubmission.deleteMany({});
+      
+      // 모든 보유 주식 삭제
+      await tx.holding.deleteMany({});
+
+      // 모든 거래 기록 삭제  
+      await tx.transaction.deleteMany({});
+
+      // 모든 팀 잔액 및 점수 초기화
+      await tx.team.updateMany({
+        data: {
+          balance: 10000, // 초기 자금 10만원
+          esgScore: 0,
+          quizScore: 0
+        }
+      });
+
+      // 주식 가격 초기화
+      const stockResets = [
+        { symbol: 'TESLA', price: 95.0 },
+        { symbol: 'BEYOND', price: 42.0 },
+        { symbol: 'VESTAS', price: 35.0 },
+        { symbol: 'SOLAR', price: 20.0 },
+        { symbol: 'RECYCLE', price: 25.0 },
+        { symbol: 'AQUA', price: 18.0 },
+        { symbol: 'ORGANIC', price: 38.0 },
+        { symbol: 'CARBON', price: 45.0 }
+      ];
+
+      for (const reset of stockResets) {
+        await tx.stock.updateMany({
+          where: { symbol: reset.symbol },
+          data: { currentPrice: reset.price }
+        });
+      }
+    });
 
     // 게임 시작
     gameState = {
@@ -54,14 +97,15 @@ export const startGame = async (req: Request, res: Response): Promise<void> => {
       phase: 'news',
       timeRemaining: PHASE_DURATIONS.news,
       isActive: true,
-      startTime: new Date()
+      startTime: new Date(),
+      requiresManualAdvance: false
     };
 
     // 첫 번째 라운드 시작
-    startRound(1);
+    await startRound(1);
 
     res.json({ 
-      message: '게임이 시작되었습니다!',
+      message: '게임이 시작되었습니다! 라운드 1 뉴스 발표 중...',
       gameState: gameState
     });
   } catch (error) {
@@ -70,12 +114,16 @@ export const startGame = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const resetGame = async (req: Request, res: Response): Promise<void> => {
+const resetGame = async (req: Request, res: Response): Promise<void> => {
   try {
     // 타이머 정리
     if (gameTimer) {
       clearTimeout(gameTimer);
       gameTimer = null;
+    }
+    if (timeUpdateInterval) {
+      clearInterval(timeUpdateInterval);
+      timeUpdateInterval = null;
     }
 
     // 게임 상태 초기화
@@ -83,26 +131,48 @@ export const resetGame = async (req: Request, res: Response): Promise<void> => {
       currentRound: 1,
       phase: 'news',
       timeRemaining: 0,
-      isActive: false
+      isActive: false,
+      requiresManualAdvance: false
     };
 
-    // 모든 팀 잔액 및 점수 초기화
-    await prisma.team.updateMany({
-      data: {
-        balance: 100000, // 초기 자금 10만원
-        esgScore: 0,
-        quizScore: 0
+    // 🔥 모든 게임 데이터 완전 초기화
+    await prisma.$transaction(async (tx) => {
+      await tx.quizSubmission.deleteMany({});
+      await tx.holding.deleteMany({});
+      await tx.transaction.deleteMany({});
+
+      await tx.team.updateMany({
+        data: {
+          balance: 10000,
+          esgScore: 0,
+          quizScore: 0
+        }
+      });
+
+      // 주식 가격 완전 초기화
+      const stockResets = [
+        { symbol: 'TESLA', price: 95.0 },
+        { symbol: 'BEYOND', price: 42.0 },
+        { symbol: 'VESTAS', price: 35.0 },
+        { symbol: 'SOLAR', price: 20.0 },
+        { symbol: 'RECYCLE', price: 25.0 },
+        { symbol: 'AQUA', price: 18.0 },
+        { symbol: 'ORGANIC', price: 38.0 },
+        { symbol: 'CARBON', price: 45.0 }
+      ];
+
+      for (const reset of stockResets) {
+        await tx.stock.updateMany({
+          where: { symbol: reset.symbol },
+          data: { currentPrice: reset.price }
+        });
       }
     });
 
-    // 모든 보유 주식 삭제
-    await prisma.holding.deleteMany({});
-
-    // 모든 거래 기록 삭제
-    await prisma.transaction.deleteMany({});
+    console.log('🔄 게임 완전 초기화 완료');
 
     res.json({ 
-      message: '게임이 초기화되었습니다.',
+      message: '게임이 완전히 초기화되었습니다.',
       gameState: gameState
     });
   } catch (error) {
@@ -111,7 +181,8 @@ export const resetGame = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-export const forceNextPhase = async (req: Request, res: Response): Promise<void> => {
+// 🔥 수동 진행 함수 (관리자가 단계를 직접 넘김)
+const forceNextPhase = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!gameState.isActive) {
       res.status(400).json({ message: '게임이 진행 중이 아닙니다.' });
@@ -119,19 +190,66 @@ export const forceNextPhase = async (req: Request, res: Response): Promise<void>
     }
 
     // 현재 타이머 정리
-    if (gameTimer) {
-      clearTimeout(gameTimer);
-    }
+    clearAllTimers();
+
+    const previousPhase = gameState.phase;
+    const previousRound = gameState.currentRound;
 
     // 다음 페이즈로 강제 이동
     await moveToNextPhase();
 
     res.json({ 
-      message: '다음 페이즈로 이동했습니다.',
+      message: `${getPhaseKorean(previousPhase)} → ${getPhaseKorean(gameState.phase)}로 수동 이동했습니다.`,
+      previous: {
+        round: previousRound,
+        phase: previousPhase
+      },
+      current: {
+        round: gameState.currentRound,
+        phase: gameState.phase,
+        timeRemaining: gameState.timeRemaining,
+        requiresManualAdvance: gameState.requiresManualAdvance
+      },
       gameState: gameState
     });
   } catch (error) {
     const { message, statusCode } = handleControllerError(error, '페이즈 강제 이동');
+    res.status(statusCode).json({ message });
+  }
+};
+
+// 🔥 다음 라운드 시작 함수 (관리자가 라운드를 수동으로 넘김)
+const startNextRound = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!gameState.isActive) {
+      res.status(400).json({ message: '게임이 진행 중이 아닙니다.' });
+      return;
+    }
+
+    if (gameState.phase !== 'results' || !gameState.requiresManualAdvance) {
+      res.status(400).json({ 
+        message: '다음 라운드를 시작할 수 있는 상태가 아닙니다.',
+        currentPhase: gameState.phase,
+        requiresManualAdvance: gameState.requiresManualAdvance,
+        hint: 'results 단계에서 requiresManualAdvance가 true일 때만 가능합니다.'
+      });
+      return;
+    }
+
+    if (gameState.currentRound >= 8) {
+      res.status(400).json({ message: '이미 마지막 라운드입니다.' });
+      return;
+    }
+
+    // 다음 라운드 시작
+    await startRound(gameState.currentRound + 1);
+
+    res.json({
+      message: `라운드 ${gameState.currentRound} 시작! 뉴스 발표 중...`,
+      gameState: gameState
+    });
+  } catch (error) {
+    const { message, statusCode } = handleControllerError(error, '다음 라운드 시작');
     res.status(statusCode).json({ message });
   }
 };
@@ -143,29 +261,54 @@ async function startRound(roundNumber: number) {
   gameState.currentRound = roundNumber;
   gameState.phase = 'news';
   gameState.timeRemaining = PHASE_DURATIONS.news;
+  gameState.requiresManualAdvance = false;
 
   // 해당 라운드의 뉴스 이벤트 활성화
   await activateRoundEvents(roundNumber);
 
-  // 타이머 시작
+  // 🔥 뉴스 단계만 자동 진행, 나머지는 수동
   startPhaseTimer();
 }
 
-async function startPhaseTimer() {
+function startPhaseTimer() {
+  clearAllTimers();
+  
   const duration = gameState.timeRemaining;
   
+  // 메인 타이머 (단계 종료)
   gameTimer = setTimeout(async () => {
-    await moveToNextPhase();
+    if (gameState.phase === 'news') {
+      // 뉴스 단계만 자동으로 퀴즈로 넘어감
+      console.log('📰 뉴스 시간 종료 - 자동으로 퀴즈 단계로 이동');
+      await moveToNextPhase();
+    } else {
+      // 다른 단계는 수동 진행 대기
+      console.log(`⏸️ ${gameState.phase} 시간 종료 - 관리자 수동 진행 대기`);
+      gameState.timeRemaining = 0;
+      gameState.requiresManualAdvance = true;
+    }
   }, duration);
 
-  // 1초마다 시간 업데이트
-  const updateTimer = setInterval(() => {
+  // 시간 업데이트 타이머 (1초마다)
+  timeUpdateInterval = setInterval(() => {
     if (gameState.timeRemaining > 0) {
       gameState.timeRemaining -= 1000;
     } else {
-      clearInterval(updateTimer);
+      clearInterval(timeUpdateInterval!);
+      timeUpdateInterval = null;
     }
   }, 1000);
+}
+
+function clearAllTimers() {
+  if (gameTimer) {
+    clearTimeout(gameTimer);
+    gameTimer = null;
+  }
+  if (timeUpdateInterval) {
+    clearInterval(timeUpdateInterval);
+    timeUpdateInterval = null;
+  }
 }
 
 async function moveToNextPhase() {
@@ -176,43 +319,49 @@ async function moveToNextPhase() {
       // 뉴스 → 퀴즈
       gameState.phase = 'quiz';
       gameState.timeRemaining = PHASE_DURATIONS.quiz;
+      gameState.requiresManualAdvance = false;
       console.log(`📝 퀴즈 단계 시작 (${PHASE_DURATIONS.quiz / 1000}초)`);
+      startPhaseTimer(); // 퀴즈도 타이머 시작하지만 수동 진행으로 대기
       break;
 
     case 'quiz':
       // 퀴즈 → 거래
       gameState.phase = 'trading';
       gameState.timeRemaining = PHASE_DURATIONS.trading;
+      gameState.requiresManualAdvance = false;
       console.log(`💼 거래 단계 시작 (${PHASE_DURATIONS.trading / 1000}초)`);
+      startPhaseTimer();
       break;
 
     case 'trading':
       // 거래 → 결과
       gameState.phase = 'results';
       gameState.timeRemaining = PHASE_DURATIONS.results;
+      gameState.requiresManualAdvance = false;
       await calculateRoundResults();
       console.log(`📊 결과 발표 단계 (${PHASE_DURATIONS.results / 1000}초)`);
+      startPhaseTimer();
       break;
 
     case 'results':
-      // 결과 → 다음 라운드 or 게임 종료
+      // 🔥 결과 → 다음 라운드 or 게임 종료 (관리자 수동 진행 필요)
       if (gameState.currentRound >= 8) {
         // 게임 종료
         gameState.phase = 'finished';
         gameState.isActive = false;
         gameState.endTime = new Date();
+        gameState.requiresManualAdvance = false;
+        clearAllTimers();
         console.log('🏁 게임 종료!');
         return;
       } else {
-        // 다음 라운드 시작
-        await startRound(gameState.currentRound + 1);
+        // 🔥 다음 라운드는 관리자가 수동으로 시작해야 함
+        gameState.requiresManualAdvance = true;
+        gameState.timeRemaining = 0;
+        clearAllTimers();
+        console.log(`⏸️ 라운드 ${gameState.currentRound} 완료 - 관리자가 라운드 ${gameState.currentRound + 1} 시작 대기`);
         return;
       }
-  }
-
-  // 타이머 재시작 (finished가 아닌 경우)
-  if (gameState.phase !== 'finished') {
-    startPhaseTimer();
   }
 }
 
@@ -231,16 +380,22 @@ async function activateRoundEvents(roundNumber: number) {
       const affectedStocks = event.affectedStocks as Record<string, number>;
       
       for (const [symbol, changePercent] of Object.entries(affectedStocks)) {
-        await prisma.stock.updateMany({
-          where: { symbol: symbol },
-          data: {
-            currentPrice: {
-              multiply: 1 + changePercent / 100
-            }
-          }
+        const currentStock = await prisma.stock.findFirst({
+          where: { symbol: symbol }
         });
         
-        console.log(`📈 ${symbol} 주가 ${changePercent > 0 ? '↗️' : '↘️'} ${changePercent}% 변동`);
+        if (currentStock) {
+          const newPrice = Number(currentStock.currentPrice) * (1 + changePercent / 100);
+          
+          await prisma.stock.updateMany({
+            where: { symbol: symbol },
+            data: {
+              currentPrice: Math.max(1, Math.round(newPrice * 100) / 100) // 최소 1원, 소수점 2자리
+            }
+          });
+          
+          console.log(`📈 ${symbol} 주가: ${currentStock.currentPrice} → ${Math.round(newPrice * 100) / 100} (${changePercent > 0 ? '↗️' : '↘️'} ${changePercent}%)`);
+        }
       }
     }
 
@@ -260,7 +415,8 @@ async function calculateRoundResults() {
             stock: {
               select: {
                 esgCategory: true,
-                currentPrice: true
+                currentPrice: true,
+                symbol: true
               }
             }
           }
@@ -284,17 +440,29 @@ async function calculateRoundResults() {
         }
       });
 
-      console.log(`🌱 ${team.name}: ESG 보너스 +${esgBonus}점`);
+      console.log(`🌱 ${team.name}: ESG 보너스 +${esgBonus}점 (투자액: ${totalInvestment.toLocaleString()}원)`);
     }
   } catch (error) {
     console.error('라운드 결과 계산 오류:', error);
   }
 }
 
-// WebSocket이나 실시간 업데이트용 (선택사항)
-export function broadcastGameState() {
-  // 여기서 WebSocket으로 모든 클라이언트에게 게임 상태 전송
-  // io.emit('gameStateUpdate', gameState);
+function getPhaseKorean(phase: string): string {
+  const phaseMap: Record<string, string> = {
+    'news': '뉴스 발표',
+    'quiz': '퀴즈 단계',
+    'trading': '거래 단계',
+    'results': '결과 발표',
+    'finished': '게임 종료'
+  };
+  return phaseMap[phase] || phase;
 }
 
-export { gameState };
+export { 
+  gameState,
+  getGameState,
+  startGame,
+  resetGame,
+  forceNextPhase,
+  startNextRound
+};

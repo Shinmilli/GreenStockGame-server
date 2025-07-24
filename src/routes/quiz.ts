@@ -4,8 +4,9 @@ import {
   getQuizByRound, 
   submitQuizAnswer, 
   getQuizResults,
-  clearAllQuizSubmissions,     // 🔥 새로 추가
-  clearTeamQuizSubmission      // 🔥 새로 추가
+  clearAllQuizSubmissions,
+  clearTeamQuizSubmission,
+  getQuizStatus
 } from '../controllers/quizController';
 
 const router = express.Router();
@@ -19,8 +20,15 @@ router.post('/submit', submitQuizAnswer);
 // 퀴즈 결과 조회
 router.get('/results/:round', getQuizResults);
 
-// 🔥 새로 추가: 관리자용 엔드포인트들
+router.get('/status/:teamId/:round', getQuizStatus);
+
+
+// 관리자용 엔드포인트들
 router.delete('/admin/clear-all', clearAllQuizSubmissions);
 router.delete('/admin/teams/:teamId/quiz/:round', clearTeamQuizSubmission);
+
+
+
+
 
 export default router;

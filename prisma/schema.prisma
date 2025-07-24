@@ -13,7 +13,7 @@ model Team {
   id          Int      @id @default(autoincrement())
   code        String   @unique
   name        String?
-  balance     Decimal  @default(100000)
+  balance     Decimal  @default(10000)
   esgScore    Int      @default(0) @map("esg_score")
   quizScore   Int      @default(0) @map("quiz_score")
   createdAt   DateTime @default(now()) @map("created_at")

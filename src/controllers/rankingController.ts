@@ -35,7 +35,7 @@ export const getRanking = async (req: Request, res: Response): Promise<void> => 
       const profitLoss = portfolioValue - totalCost;
       
       // ESG 점수 계산 (투자 비중에 따른 가중치)
-      const esgWeight = portfolioValue > 0 ? (portfolioValue / 100000) * 50 : 0;
+      const esgWeight = portfolioValue > 0 ? (portfolioValue / 10000) * 50 : 0;
       const totalScore = team.esgScore + team.quizScore + esgWeight;
 
       return {
