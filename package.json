@@ -12,6 +12,9 @@
     "test": "jest",
     "test:watch": "jest --watchAll"
   },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Shinmilli/GreenStockGame-server.git"
@@ -32,7 +35,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
-    "@types/node": "^24.0.13",
+    "@types/node": "^24.1.0",
     "prisma": "^6.11.1",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",

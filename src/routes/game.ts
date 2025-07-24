@@ -4,7 +4,8 @@ import {
   getGameState, 
   startGame, 
   resetGame, 
-  forceNextPhase 
+  forceNextPhase,
+  startNextRound,
 } from '../controllers/gameStateController';
 import { getQuizResults } from '../controllers/quizController';
 import { getTradeStatus, getRoundTradeHistory } from '../controllers/tradeController';
@@ -23,5 +24,10 @@ router.get('/trade/history/:round', getRoundTradeHistory);
 
 // 퀴즈 결과
 router.get('/quiz/results/:round', getQuizResults);
+
+// 🔥 라운드 수동 시작
+router.post('/start-next-round', startNextRound);
+
+
 
 export default router;

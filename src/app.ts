@@ -1,7 +1,8 @@
 // app.ts (업데이트됨)
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
+
 
 // 라우트 임포트
 import authRoutes from './routes/auth';
