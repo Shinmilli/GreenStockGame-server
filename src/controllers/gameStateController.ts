@@ -65,7 +65,7 @@ const startGame = async (req: Request, res: Response): Promise<void> => {
       // 모든 팀 잔액 및 점수 초기화
       await tx.team.updateMany({
         data: {
-          balance: 10000, // 초기 자금 10만원
+          balance: 10000, // 초기 자금 1만원
           esgScore: 0,
           quizScore: 0
         }
@@ -367,6 +367,8 @@ async function moveToNextPhase() {
 
 async function activateRoundEvents(roundNumber: number) {
   try {
+    console.log(`🎬 라운드 ${roundNumber} 뉴스 이벤트 적용 시작...`);
+    
     // 해당 라운드의 뉴스 이벤트들 조회
     const events = await prisma.newsEvent.findMany({
       where: { 
@@ -375,35 +377,129 @@ async function activateRoundEvents(roundNumber: number) {
       }
     });
 
-    // 각 이벤트의 주가 영향 적용
+    if (events.length === 0) {
+      console.warn(`⚠️ 라운드 ${roundNumber}에 적용할 이벤트가 없습니다.`);
+      return;
+    }
+
+    console.log(`📰 라운드 ${roundNumber}에서 적용할 이벤트: ${events.length}개`);
+
+    // 🔥 각 이벤트를 순차적으로 적용
     for (const event of events) {
+      console.log(`📋 이벤트 적용: "${event.title}"`);
+      
       const affectedStocks = event.affectedStocks as Record<string, number>;
       
+      // 🔥 각 주식을 개별적으로 처리
       for (const [symbol, changePercent] of Object.entries(affectedStocks)) {
-        const currentStock = await prisma.stock.findFirst({
-          where: { symbol: symbol }
-        });
-        
-        if (currentStock) {
-          const newPrice = Number(currentStock.currentPrice) * (1 + changePercent / 100);
-          
-          await prisma.stock.updateMany({
-            where: { symbol: symbol },
-            data: {
-              currentPrice: Math.max(1, Math.round(newPrice * 100) / 100) // 최소 1원, 소수점 2자리
-            }
+        try {
+          // 현재 주식 정보 조회
+          const currentStock = await prisma.stock.findFirst({
+            where: { symbol: symbol }
           });
           
-          console.log(`📈 ${symbol} 주가: ${currentStock.currentPrice} → ${Math.round(newPrice * 100) / 100} (${changePercent > 0 ? '↗️' : '↘️'} ${changePercent}%)`);
+          if (!currentStock) {
+            console.error(`❌ 주식을 찾을 수 없음: ${symbol}`);
+            continue;
+          }
+
+          const currentPrice = Number(currentStock.currentPrice);
+          const changeMultiplier = 1 + (changePercent / 100);
+          const newPrice = currentPrice * changeMultiplier;
+          const finalPrice = Math.max(1, Math.round(newPrice * 100) / 100);
+          
+          console.log(`📈 ${symbol} 가격 계산:`, {
+            currentPrice,
+            changePercent: `${changePercent}%`,
+            changeMultiplier,
+            newPrice,
+            finalPrice
+          });
+          
+          // 🔥 가격 업데이트
+          const updateResult = await prisma.stock.updateMany({
+            where: { symbol: symbol },
+            data: { currentPrice: finalPrice }
+          });
+          
+          console.log(`✅ ${symbol} 업데이트 완료:`, {
+            이전가격: currentPrice,
+            신규가격: finalPrice,
+            변화율: `${changePercent}%`,
+            업데이트된행수: updateResult.count
+          });
+          
+          // 🔥 업데이트 확인
+          const verifyStock = await prisma.stock.findFirst({
+            where: { symbol: symbol }
+          });
+          
+          if (verifyStock) {
+            const verifiedPrice = Number(verifyStock.currentPrice);
+            if (Math.abs(verifiedPrice - finalPrice) > 0.01) {
+              console.error(`❌ ${symbol} 가격 업데이트 검증 실패:`, {
+                예상가격: finalPrice,
+                실제가격: verifiedPrice
+              });
+            } else {
+              console.log(`✅ ${symbol} 가격 업데이트 검증 성공: ${verifiedPrice}`);
+            }
+          }
+          
+        } catch (stockError) {
+          console.error(`❌ ${symbol} 처리 중 오류:`, stockError);
         }
       }
     }
 
-    console.log(`📰 라운드 ${roundNumber} 뉴스 이벤트 ${events.length}개 적용`);
+    console.log(`🎉 라운드 ${roundNumber} 뉴스 이벤트 적용 완료`);
+    
+    // 🔥 최종 검증: 모든 주식 가격 조회
+    const allStocks = await prisma.stock.findMany({
+      select: { symbol: true, currentPrice: true }
+    });
+    
+    console.log('📊 이벤트 적용 후 주식 가격:', 
+      allStocks.map(s => `${s.symbol}: ${Number(s.currentPrice)}`).join(', ')
+    );
+    
   } catch (error) {
-    console.error('뉴스 이벤트 활성화 오류:', error);
+    console.error(`❌ 라운드 ${roundNumber} 뉴스 이벤트 활성화 오류:`, error);
+    throw error;
   }
 }
+
+// 🔥 강제 이벤트 재적용 함수 추가
+export const reapplyCurrentRoundEvents = async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log(`🔄 현재 라운드 ${gameState.currentRound} 이벤트 재적용 시작`);
+    
+    await activateRoundEvents(gameState.currentRound);
+    
+    // 업데이트된 주식 정보 조회
+    const updatedStocks = await prisma.stock.findMany({
+      orderBy: { symbol: 'asc' },
+      select: {
+        symbol: true,
+        currentPrice: true,
+        companyName: true
+      }
+    });
+    
+    res.json({
+      message: `라운드 ${gameState.currentRound} 이벤트가 재적용되었습니다.`,
+      currentRound: gameState.currentRound,
+      updatedStocks: updatedStocks.map(stock => ({
+        ...stock,
+        currentPrice: Number(stock.currentPrice)
+      }))
+    });
+    
+  } catch (error) {
+    const { message, statusCode } = handleControllerError(error, '이벤트 재적용');
+    res.status(statusCode).json({ message });
+  }
+};
 
 async function calculateRoundResults() {
   try {
