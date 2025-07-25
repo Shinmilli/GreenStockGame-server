@@ -160,16 +160,6 @@ async function main() {
   const newsEvents = await prisma.newsEvent.createMany({
     data: [
       {
-        title: '글로벌 전기차 혁명 시작!',
-        content: '전 세계 주요국이 2030년부터 내연기관차 판매 금지를 발표했습니다. 전기차 및 배터리 관련주가 폭등하고 있습니다.',
-        affectedStocks: { 
-          TESLA: 25,    // 대폭 상승
-          SOLAR: 15,    // 충전 인프라 관련 상승
-          CARBON: -5    // 상대적으로 소폭 하락
-        },
-        roundNumber: 1,
-      },
-      {
         title: '테슬라, 혁신적인 배터리 기술 공개',
         content: '테슬라가 차세대 4680 배터리로 충전시간 70% 단축, 주행거리 3배 향상을 달성했습니다. 전기차 시장에 게임체인저가 될 전망입니다.',
         affectedStocks: { 
